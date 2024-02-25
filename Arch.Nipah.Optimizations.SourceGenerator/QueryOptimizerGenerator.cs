@@ -90,7 +90,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
 
         if (closure.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)) is false)
         {
-            ctx.Error(query, "Optimizable queries should be marked as 'static' or with '[NoOptimizable]' attribute");
+            ctx.Error(query, "Optimizable queries should be marked as 'static' or with '[NoOptimizable]' attribute", 1);
             return;
         }
         var queryParams = ExtractParams(closure, sem);

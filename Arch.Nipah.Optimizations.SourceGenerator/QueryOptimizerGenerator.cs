@@ -84,9 +84,13 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         // Get the closure body within the second argument
         if (query.ArgumentList.Arguments[1].Expression is not LambdaExpressionSyntax closure)
             return;
+
+        if (closure.HasAttribute("NoOptimizable", "Arch.Nipah.Optimizations"))
+            return;
+
         if (closure.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)) is false)
         {
-            ctx.Error(query, "Optimizable queries should be marked as 'static'");
+            ctx.Error(query, "Optimizable queries should be marked as 'static' or with '[NoOptimizable]' attribute");
             return;
         }
         var queryParams = ExtractParams(closure, sem);

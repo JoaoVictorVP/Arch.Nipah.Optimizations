@@ -5,7 +5,7 @@ using System.Text;
 
 namespace Arch.Nipah.Optimizations.SourceGenerator;
 
-public static class Utils
+public static class DiagnosticUtils
 {
     public static void Error(this SourceProductionContext ctx, SyntaxNode at, string message)
     {
@@ -16,7 +16,8 @@ public static class Utils
                 messageFormat: message,
                 category: "Arch.Nipah.Optimizations",
                 defaultSeverity: DiagnosticSeverity.Error,
-                isEnabledByDefault: true
+                isEnabledByDefault: true,
+                description: message
             ),
             location: at.GetLocation()));
     }

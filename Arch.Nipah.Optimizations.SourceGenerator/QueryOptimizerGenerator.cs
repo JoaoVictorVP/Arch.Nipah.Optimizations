@@ -76,6 +76,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         // Get the second argument type for the invocation expression syntax
         if (sem.GetSymbolInfo(query).Symbol is not IMethodSymbol queryInv)
             return;
+
         var queryType = queryInv.Parameters[1].Type;
         if (queryType is null)
             return;
@@ -83,6 +84,11 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         // Get the closure body within the second argument
         if (query.ArgumentList.Arguments[1].Expression is not LambdaExpressionSyntax closure)
             return;
+        if (closure.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)) is false)
+        {
+            ctx.Error(query, "Optimizable queries should be marked as 'static'");
+            return;
+        }
         var queryParams = ExtractParams(closure, sem);
         var closureBody = closure.Body;
         if (closureBody is null)

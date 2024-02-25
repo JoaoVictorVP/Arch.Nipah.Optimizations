@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <InterceptorsPreviewNamespaces>$(InterceptorsPreviewNamespaces);Arch.Nipah.Optimizations.Interceptors</InterceptorsPreviewNamespaces>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <ItemGroup>

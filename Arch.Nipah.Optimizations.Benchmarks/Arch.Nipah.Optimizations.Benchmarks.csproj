@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InterceptorsPreviewNamespaces>$(InterceptorsPreviewNamespaces);Arch.Nipah.Optimizations.Interceptors</InterceptorsPreviewNamespaces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Arch" Version="1.2.7.1-alpha" />
+    <PackageReference Include="Arch.System" Version="1.0.2" />
+    <PackageReference Include="Arch.System.SourceGenerator" Version="1.1.2" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Arch.Nipah.Optimizations\Arch.Nipah.Optimizations.csproj" />
+    <ProjectReference Include="..\Arch.Nipah.Optimizations.SourceGenerator\Arch.Nipah.Optimizations.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

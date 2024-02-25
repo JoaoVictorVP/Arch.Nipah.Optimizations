@@ -19,7 +19,7 @@ public static class SimpleTests
         var query = new QueryDescription()
             .WithAll<TestComp>();
 
-        world.Query(query, (ref TestComp comp) =>
+        world.Query(query, static (ref TestComp comp) =>
         {
             Console.WriteLine("Has comp");
         });

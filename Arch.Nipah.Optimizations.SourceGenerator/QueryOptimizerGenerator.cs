@@ -82,21 +82,29 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
             return;
 
         // Get the closure body within the second argument
-        if (query.ArgumentList.Arguments[1].Expression is not LambdaExpressionSyntax closure)
-            return;
-
-        if (closure.HasAttribute("NoOptimizable", "Arch.Nipah.Optimizations"))
-            return;
-
-        if (closure.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)) is false)
+        if (query.ArgumentList.Arguments[1].Expression is not LambdaExpressionSyntax lambda)
         {
-            ctx.Error(query, "Optimizable queries should be marked as 'static' or with '[NoOptimizable]' attribute", 1);
+            ctx.Info(query, "Only queries called with lambda expressions can be optimized.", 6);
             return;
         }
-        var queryParams = ExtractParams(closure, sem);
-        var closureBody = closure.Body;
-        if (closureBody is null)
+
+        if (lambda.HasAttribute("NoOptimizable", "Arch.Nipah.Optimizations"))
             return;
+
+        if (lambda.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)) is false)
+        {
+            ctx.Error(query, "Optimizable queries should be marked as 'static' or with '[NoOptimizable]' attribute.", 1);
+            return;
+        }
+        var queryParams = ExtractParams(lambda, sem);
+        var lambdaBody = lambda.Body;
+        if (lambdaBody is null)
+            return;
+        if (lambda.ExpressionBody is not null)
+        {
+            ctx.Warning(lambda, "Expression bodied lambdas are not supported yet in queries. Make a block expression lambda or mark with '[NoOptimizable]' to suppress this warning.", 2);
+            return;
+        }
 
         var loc = query.Expression.DescendantTokens().Last().GetLocation().GetLineSpan();
 
@@ -124,13 +132,13 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         sb.AppendLine($"    public static void Intercept(this World world, in QueryDescription description, {queryType.ToDisplayString()} _)");
         sb.AppendLine("    {");
         // Write the closure body into the interceptor
-        sb.AppendLine(TransformBody(closureBody, queryParams, sem).ToFullString());
+        sb.AppendLine(TransformBody(lambdaBody, queryParams, sem, ctx).ToFullString());
         sb.AppendLine("    }");
         sb.AppendLine("}");
 
         ctx.AddSource($"{nms}.{methodName}Interceptor_{GetHashCode($"{file}_{query.GetLocation().GetLineSpan().StartLinePosition}_{globalIndex}")}", sb.ToString());
     }
-    static SyntaxNode TransformBody(CSharpSyntaxNode body, List<QueryParam> queryParams, SemanticModel sem)
+    static SyntaxNode TransformBody(CSharpSyntaxNode body, List<QueryParam> queryParams, SemanticModel sem, SourceProductionContext ctx)
     {
         // Let's find all out of scope breaks
         var throws = new HashSet<string>(body.DescendantNodes().OfType<ThrowStatementSyntax>()
@@ -149,9 +157,15 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
             if (call.ArgumentList.Arguments.Count < 1)
                 continue;
             if (call.ArgumentList.Arguments[0].Expression is not LambdaExpressionSyntax closure)
+            {
+                ctx.Error(call, "OutOfScope should be called with a lambda expression.", 4);
                 continue;
-            if(closure is { ExpressionBody: null })
+            }
+            if (closure is { ExpressionBody: null })
+            {
+                ctx.Error(closure, "Expression bodied lambdas are not supported yet in 'Optimizer.OutOfScope'.", 3);
                 continue;
+            }
 
             if(closure.FirstAncestorOrSelf<VariableDeclaratorSyntax>() is not null and var dec)
             {

@@ -151,9 +151,11 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         // Attribute to hint the compiler to intercept the method
         // first argument is the file path
         // second argument is the line number offset by 1
+        // third argument is the character offset by 1
         sb.Indent().WithAttribute("InterceptsLocation")
             .Argument($"@\"{file}\"")
             .Argument(loc.StartLinePosition.Line + 1)
+            .Argument(loc.StartLinePosition.Character + 1)
             .Into();
 
         // Attribute to hint the JIT to inline the interceptor (if possible)

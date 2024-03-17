@@ -33,11 +33,6 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
 
                 var fileUsings = methodNode.SyntaxTree.GetRoot()
                     .GetAllUsings().ToArray();
-            var (node, file, sem) = pair;
-            var fileUsings = GetAllUsings(node.SyntaxTree.GetRoot()).ToArray();
-            IterAndGen(node.Identifier.Text, file, node.Body!, ctx, sem, fileUsings);
-        });
-    }
 
                 // Find namespace of the method
                 var namespaceNode = methodNode.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();

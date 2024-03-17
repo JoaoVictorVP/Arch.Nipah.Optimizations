@@ -202,40 +202,12 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
                 continue;
             }
 
-            if(closure.FirstAncestorOrSelf<VariableDeclaratorSyntax>() is not null and var dec)
-            {
-                var name = dec.Identifier.Text;
-                var varDec = SyntaxFactory.VariableDeclarator(
-                    SyntaxFactory.Identifier(name),
-                    null,
-                    SyntaxFactory.EqualsValueClause(closure.ExpressionBody)
+            var producer = OutOfScopeUtils.ProduceStatementFromOutOfScopeCall(
+                closure,
+                lambdaExpressionBody: closure.ExpressionBody
                 );
-
-                var varStatement = SyntaxFactory.LocalDeclarationStatement(
-                    SyntaxFactory.VariableDeclaration(
-                        SyntaxFactory.IdentifierName("var "),
-                        SyntaxFactory.SingletonSeparatedList(varDec)
-                    )
-                );
-
-                closures.Add(() => varStatement);
+            closures.Add(producer);
             }
-            else if(closure.FirstAncestorOrSelf<AssignmentExpressionSyntax>() is not null and var assign)
-            {
-                var left = assign.Left;
-                var assignStatement = SyntaxFactory.ExpressionStatement(
-                    SyntaxFactory.AssignmentExpression(
-                        SyntaxKind.SimpleAssignmentExpression,
-                        left,
-                        closure.ExpressionBody
-                    )
-                );
-
-                closures.Add(() => assignStatement);
-            }
-            else
-                closures.Add(() => SyntaxFactory.ExpressionStatement(closure.ExpressionBody));
-        }
         body = body.RemoveNodes(outOfScopeCalls
             .Select(c => c.FirstAncestorOrSelf<StatementSyntax>()!), SyntaxRemoveOptions.KeepNoTrivia)
             ?? throw new InvalidOperationException("Failed to remove nodes");

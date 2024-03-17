@@ -145,13 +145,29 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
 
         sb.AppendLine($"public static class {nms.Replace('.', '_')}{methodName}_{globalIndex}_Interceptor");
         sb.AppendLine("{");
-        sb.AppendLine($"    [InterceptsLocation(@\"{file}\", {loc.StartLinePosition.Line + 1}, {loc.StartLinePosition.Character + 1})]");
-        sb.AppendLine("     [MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        sb.AppendLine($"    public static void Intercept(this World world, in QueryDescription description, {queryType.ToDisplayString()} _)");
-        sb.AppendLine("    {");
+
+        // Attribute to hint the compiler to intercept the method
+        // first argument is the file path
+        // second argument is the line number offset by 1
+        sb.Indent().WithAttribute("InterceptsLocation")
+            .Argument($"@\"{file}\"")
+            .Argument(loc.StartLinePosition.Line + 1)
+            .Into();
+
+        // Attribute to hint the JIT to inline the interceptor (if possible)
+        sb.Indent().WithAttribute("MethodImpl")
+            .Argument("MethodImplOptions.AggressiveInlining")
+            .Into();
+
+        // The interceptor method
+        sb.Indent().AppendLine($"public static void Intercept(this World world, in QueryDescription description, {queryType.ToDisplayString()} _)");
+        sb.Indent().AppendLine("{");
+
         // Write the closure body into the interceptor
         sb.AppendLine(TransformBody(lambdaBody, queryParams, sem, ctx).ToFullString());
         sb.AppendLine("    }");
+
+        sb.Indent().AppendLine("}");
         sb.AppendLine("}");
 
         ctx.AddSource($"{nms}.{methodName}Interceptor_{GetHashCode($"{file}_{query.GetLocation().GetLineSpan().StartLinePosition}_{globalIndex}")}", sb.ToString());

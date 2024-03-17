@@ -177,9 +177,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
     static SyntaxNode TransformBody(CSharpSyntaxNode body, List<QueryParam> queryParams, SemanticModel sem, SourceProductionContext ctx)
     {
         // Let's find all out of scope breaks
-        var throws = new HashSet<string>(body.DescendantNodes().OfType<ThrowStatementSyntax>()
-            .Where(t => t.Expression is not null)
-            .Select(t => t.Expression!)
+        var throws = new HashSet<string>(body.FindThrowStatementExpressions()
             .Where(t => sem.GetTypeInfo(t).Type?.ToString() is "Arch.Nipah.Optimizations.Optimizer.Break")
             .Select(t => t.ToFullString()));
 

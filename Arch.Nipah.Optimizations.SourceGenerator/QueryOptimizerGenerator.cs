@@ -239,7 +239,8 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
 
         string variableDefinitions = BuildVariableDefinitionsForQuery(queryParams);
 
-        var parsed = SyntaxFactory.ParseSyntaxTree($$"""
+        // Define the manual query iteration
+        var optimizedQueryLoop = SyntaxFactory.ParseSyntaxTree($$"""
             {
                 foreach(var chunk in world.Query(description).GetChunkIterator())
                 {
@@ -256,10 +257,14 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
                 }
             }
             """).GetRoot();
-        var replace = parsed.DescendantNodes().OfType<LocalDeclarationStatementSyntax>()
-            .Where(l => l.Declaration.Variables.Any(v => v.Identifier.Text is "replace")).First();
-        parsed = parsed.ReplaceNode(replace, body);
-        body = parsed as CSharpSyntaxNode ?? throw new InvalidOperationException("Failed to replace node");
+
+        // Replace the body with the new parsed body
+        var replace = optimizedQueryLoop.DescendantNodes()
+            .OfType<LocalDeclarationStatementSyntax>()
+            .Where(l => l.Declaration.Variables.Any(v => v.Identifier.Text is "replace"))
+            .First();
+        optimizedQueryLoop = optimizedQueryLoop.ReplaceNode(replace, body);
+        body = optimizedQueryLoop as CSharpSyntaxNode ?? throw new InvalidOperationException("Failed to replace node");
 
         // Now we'll add the closures back to the body
         var bodyBlock = body.DescendantNodesAndSelf().OfType<BlockSyntax>().First();

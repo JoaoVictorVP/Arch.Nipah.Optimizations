@@ -91,8 +91,16 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         });
     }
 
-    static void ProduceQueryInterceptor(string methodName, string nms, string file, InvocationExpressionSyntax query, SourceProductionContext ctx, SemanticModel sem, string[] fileUsings, int globalIndex)
+    static void ProduceQueryInterceptor(QueryModel optimizableQuery, SourceProductionContext ctx)
     {
+        var query = optimizableQuery.QueryCall;
+        var sem = optimizableQuery.Method.Semantics;
+        var usings = optimizableQuery.Method.Usings;
+        var methodName = optimizableQuery.Method.MethodName;
+        var file = optimizableQuery.Method.File;
+        var nms = optimizableQuery.Namespace;
+        var globalIndex = optimizableQuery.GlobalIndex;
+
         // Get the second argument type for the invocation expression syntax
         if (sem.GetSymbolInfo(query).Symbol is not IMethodSymbol queryInv)
             return;

@@ -235,7 +235,6 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         //         rest of original body goes here
         //     }
         // }
-        // TODO: Get all the params and types and replace them accordingly to make this work
         var entityParam = queryParams.Find(queryParams => queryParams.IsEntity);
 
         var variableDefinitions = queryParams.Count(qp => qp.IsEntity is false) switch

@@ -42,7 +42,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
 
                 // Obtain all the usings for the method
                 var usings = new HashSet<string>()
-    {
+                {
                     "Arch.Core",
                     "System",
                     "System.Collections.Generic",
@@ -62,15 +62,15 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
                 );
                 var optimizable = new OptimizableMethodModel(header);
 
-        // Find all method calls of world.Query
+                // Find all method calls of world.Query
                 var queryCalls = methodNode.Body!.DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Where(i => i.Expression is MemberAccessExpressionSyntax m && m.Name.Identifier.Text == "Query");
+                    .Where(i => i.Expression is MemberAccessExpressionSyntax m && m.Name.Identifier.Text == "Query");
 
-        int globalIndex = 0;
-        foreach (var call in queryCalls)
-        {
-            if (call.ArgumentList.Arguments.Count < 2)
-                continue;
+                int globalIndex = 0;
+                foreach (var call in queryCalls)
+                {
+                    if (call.ArgumentList.Arguments.Count < 2)
+                        continue;
 
                     var queryModel = new QueryModel(
                         method: header,
@@ -81,13 +81,13 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
 
                     optimizable.Queries.Add(queryModel);
 
-    }
+                }
 
                 return optimizable;
             });
 
         context.RegisterSourceOutput(methods, (ctx, optimizable) =>
-    {
+        {
             foreach(var query in optimizable.Queries)
                 ProduceQueryInterceptor(query, ctx);
         });
@@ -176,7 +176,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         var hash = $"{file}_{query.GetLocation().GetLineSpan().StartLinePosition}_{globalIndex}".GetDeterministicHashCode();
         ctx.AddSource($"{nms}.{methodName}Interceptor_{hash}", sb.ToString());
     }
-    static SyntaxNode TransformBody(CSharpSyntaxNode body, List<QueryParam> queryParams, SemanticModel sem, SourceProductionContext ctx)
+    static SyntaxNode TransformBody(CSharpSyntaxNode body, List<ECSQueryParam> queryParams, SemanticModel sem, SourceProductionContext ctx)
     {
         // Let's find all out of scope breaks
         var throws = new HashSet<string>(body.FindThrowStatementExpressions()
@@ -207,9 +207,9 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
             var producer = OutOfScopeUtils.ProduceStatementFromOutOfScopeCall(
                 closure,
                 lambdaExpressionBody: closure.ExpressionBody
-                );
+            );
             closures.Add(producer);
-            }
+        }
         body = body.RemoveNodes(outOfScopeCalls
             .Select(c => c.FirstAncestorOrSelf<StatementSyntax>()!), SyntaxRemoveOptions.KeepNoTrivia)
             ?? throw new InvalidOperationException("Failed to remove nodes");
@@ -298,9 +298,9 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
                 var first = nonEntityParams.First();
                 variableDefinitions = $"ref var {first.Name} = ref Unsafe.Add(ref arr, index);";
                 break;
-    }
+            }
             default:
-    {
+            {
                 variableDefinitions = string.Join("\n", nonEntityParams
                     .Select((qp, i) => $"ref var {qp.Name} = ref Unsafe.Add(ref arr.t{i}, index);"));
                 break;

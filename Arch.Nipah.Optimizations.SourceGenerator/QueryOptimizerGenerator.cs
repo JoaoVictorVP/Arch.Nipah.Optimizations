@@ -164,8 +164,8 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         sb.Indent().AppendLine("{");
 
         // Write the closure body into the interceptor
-        sb.AppendLine(TransformBody(lambdaBody, queryParams, sem, ctx).ToFullString());
-        sb.AppendLine("    }");
+        var transformedBody = TransformBody(lambdaBody, queryParams, sem, ctx).ToFullString();
+        sb.AppendLine(transformedBody);
 
         sb.Indent().AppendLine("}");
         sb.AppendLine("}");

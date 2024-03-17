@@ -213,17 +213,19 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
             ?? throw new InvalidOperationException("Failed to remove nodes");
 
         // And we will replace all 'return's with 'continue's to make the code work
-        body = body.ReplaceNodes(body.DescendantNodes().OfType<ReturnStatementSyntax>(),
-                       (old, _) => SyntaxFactory.ContinueStatement()
-                       .WithTrailingTrivia(SyntaxFactory.SyntaxTrivia(SyntaxKind.EndOfLineTrivia, "\n")));
+        body = body.ReplaceNodes(
+            nodes: body.DescendantNodes().OfType<ReturnStatementSyntax>(),
+            computeReplacementNode: (_, _) => SyntaxFactory.ContinueStatement().WithEndOfLine()
+        );
 
         // And replace all occurrences of throw Arch.Nipah.Optimizations.Optimizer.OptimizerBreak with a real break statement
         var newThrows = body.DescendantNodes().OfType<ThrowStatementSyntax>()
             .Where(t => t.Expression is not null)
             .Where(t => throws.Contains(t.Expression!.ToString()));
-        body = body.ReplaceNodes(newThrows,
-                                  (old, _) => SyntaxFactory.BreakStatement()
-                                  .WithTrailingTrivia(SyntaxFactory.SyntaxTrivia(SyntaxKind.EndOfLineTrivia, "\n")));
+        body = body.ReplaceNodes(
+            nodes: newThrows,
+            computeReplacementNode: (_, _) => SyntaxFactory.BreakStatement().WithEndOfLine()
+        );
 
         // Now, let's pick all the resting body code and transform it this way:
         // foreach(var chunk in world.Query(description))
@@ -276,7 +278,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         if (closures.Count > 0)
         {
             var newBody = bodyBlock!.Statements
-                .InsertRange(0, closures.Select(p => p().WithTrailingTrivia(SyntaxFactory.SyntaxTrivia(SyntaxKind.EndOfLineTrivia, "\n"))));
+                .InsertRange(0, closures.Select(p => p().WithEndOfLine()));
             body = bodyBlock!.WithStatements(newBody);
         }
 

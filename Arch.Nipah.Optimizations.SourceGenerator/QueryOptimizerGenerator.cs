@@ -124,7 +124,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
             ctx.Error(query, "Optimizable queries should be marked as 'static' or with '[NoOptimizable]' attribute.", 1);
             return;
         }
-        var queryParams = ExtractParams(lambda, sem);
+        var queryParams = ExtractECSParams(lambda, sem);
         var lambdaBody = lambda.Body;
         if (lambdaBody is null)
             return;
@@ -325,18 +325,19 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
             hash = (hash << 5) - hash + str[i];
         return hash;
     }
+
+    static List<ECSQueryParam> ExtractECSParams(LambdaExpressionSyntax closure, SemanticModel sem)
+        => closure.ExtractParams(sem).Select(p => new ECSQueryParam(p)).ToList();
 }
-readonly struct QueryParam
+readonly struct ECSQueryParam
 {
-    public readonly string Type;
-    public readonly string Name;
+    readonly LambdaExpressionParam param;
+    public readonly string Type => param.Type;
+    public readonly string Name => param.Name;
     public readonly bool IsEntity => Type is "Arch.Core.Entity";
 
     public readonly bool IsValid => Type is not null && Name is not null;
 
-    public QueryParam(string type, string name)
-    {
-        Type = type;
-        Name = name;
-    }
+    public ECSQueryParam(LambdaExpressionParam param)
+        => this.param = param;
 }

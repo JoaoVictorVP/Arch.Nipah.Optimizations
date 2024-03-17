@@ -183,7 +183,8 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
 
         // Let's find all the method calls to Optimizer.OutOfScope
         var outOfScopeCalls = body.DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Where(i => i.Expression is MemberAccessExpressionSyntax m && m.Name.Identifier.Text == "OutOfScope");
+            .Where(i => i.Expression is MemberAccessExpressionSyntax m
+                && m.Name.Identifier.Text == "OutOfScope");
         // Now we'll pick all the closure bodies (or expression bodies) and store them in a list for later usage and remove from the original body
         var closures = new List<Func<StatementSyntax>>();
         foreach (var call in outOfScopeCalls)

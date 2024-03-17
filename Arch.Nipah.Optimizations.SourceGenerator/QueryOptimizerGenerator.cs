@@ -237,18 +237,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         // }
         var entityParam = queryParams.Find(queryParams => queryParams.IsEntity);
 
-        var variableDefinitions = queryParams.Count(qp => qp.IsEntity is false) switch
-        {
-            0 => "",
-            1 => ((Func<string>)(() =>
-            {
-                var first = queryParams.First(qp => qp.IsEntity is false);
-                return $"ref var {first.Name} = ref Unsafe.Add(ref arr, index);";
-            }))(),
-            _ => string.Join("\n", queryParams
-                .Where(qp => qp.IsEntity is false)
-                .Select((qp, i) => $"ref var {qp.Name} = ref Unsafe.Add(ref arr.t{i}, index);"))
-        };
+        string variableDefinitions = BuildVariableDefinitionsForQuery(queryParams);
 
         var parsed = SyntaxFactory.ParseSyntaxTree($$"""
             {
@@ -284,26 +273,32 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         return body;
     }
 
-    static List<QueryParam> ExtractParams(LambdaExpressionSyntax closure, SemanticModel sem)
+    static string BuildVariableDefinitionsForQuery(List<ECSQueryParam> queryParams)
     {
-        var args = new List<QueryParam>(8);
+        var nonEntityParams = queryParams.Where(qp => qp.IsEntity is false);
 
-        var symbol = sem.GetSymbolInfo(closure).Symbol as IMethodSymbol;
-        if (symbol is null)
-            return args;
-
-        foreach (var p in symbol.Parameters)
-            args.Add(new QueryParam(p.Type.ToDisplayString(), p.Name));
-
-        return args;
+        string variableDefinitions;
+        switch (nonEntityParams.Count())
+        {
+            case 0:
+            {
+                variableDefinitions = "";
+                break;
+            }
+            case 1:
+            {
+                var first = nonEntityParams.First();
+                variableDefinitions = $"ref var {first.Name} = ref Unsafe.Add(ref arr, index);";
+                break;
     }
-
-    static int GetHashCode(string str)
+            default:
     {
-        int hash = 0;
-        for (int i = 0; i < str.Length; i++)
-            hash = (hash << 5) - hash + str[i];
-        return hash;
+                variableDefinitions = string.Join("\n", nonEntityParams
+                    .Select((qp, i) => $"ref var {qp.Name} = ref Unsafe.Add(ref arr.t{i}, index);"));
+                break;
+            }
+        };
+        return variableDefinitions;
     }
 
     static List<ECSQueryParam> ExtractECSParams(LambdaExpressionSyntax closure, SemanticModel sem)

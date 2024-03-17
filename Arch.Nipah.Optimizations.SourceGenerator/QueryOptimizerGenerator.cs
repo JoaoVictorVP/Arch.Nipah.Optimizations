@@ -27,44 +27,67 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
             },
             (ctx, ct) =>
             {
-                return (node: (MethodDeclarationSyntax)ctx.TargetNode, file: GetInterceptorFilePath(ctx.TargetNode.SyntaxTree, ctx.SemanticModel.Compilation), ctx.SemanticModel);
-            });
+                var methodNode = (MethodDeclarationSyntax)ctx.TargetNode;
+                var file = GetInterceptorFilePath(methodNode.SyntaxTree, ctx.SemanticModel.Compilation);
+                var sem = ctx.SemanticModel;
 
-        context.RegisterSourceOutput(methods, (ctx, pair) =>
-        {
+                var fileUsings = methodNode.SyntaxTree.GetRoot()
+                    .GetAllUsings().ToArray();
             var (node, file, sem) = pair;
             var fileUsings = GetAllUsings(node.SyntaxTree.GetRoot()).ToArray();
             IterAndGen(node.Identifier.Text, file, node.Body!, ctx, sem, fileUsings);
         });
     }
 
-    static void IterAndGen(string methodName, string file, BlockSyntax scope, SourceProductionContext ctx, SemanticModel sem, string[] fileUsings)
+                // Find namespace of the method
+                var namespaceNode = methodNode.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
+                var nms = namespaceNode is null ? "" : namespaceNode.Name.ToString();
+
+                // Obtain all the usings for the method
+                var usings = new HashSet<string>()
     {
+                    "Arch.Core",
+                    "System",
+                    "System.Collections.Generic",
+                    "System.Linq",
+                    "System.Text",
+                    "System.Runtime.CompilerServices"
+                };
+                usings.UnionWith(CodeGenUtils.NamespaceAndSubNamespacesFrom(nms));
+                usings.UnionWith(fileUsings);
+
+                var header = new MethodHeader(
+                    methodName: methodNode.Identifier.Text,
+                    file,
+                    scope: methodNode.Body!,
+                    semantics: sem,
+                    usings
+                );
+                var optimizable = new OptimizableMethodModel(header);
+
         // Find all method calls of world.Query
-        var queryCalls = scope.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                var queryCalls = methodNode.Body!.DescendantNodes().OfType<InvocationExpressionSyntax>()
             .Where(i => i.Expression is MemberAccessExpressionSyntax m && m.Name.Identifier.Text == "Query");
+
         int globalIndex = 0;
         foreach (var call in queryCalls)
         {
             if (call.ArgumentList.Arguments.Count < 2)
                 continue;
 
-            var namespaceNode = call.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
-            var nms = namespaceNode is null ? "" : namespaceNode.Name.ToString();
+                    var queryModel = new QueryModel(
+                        method: header,
+                        globalIndex: globalIndex++,
+                        @namespace: nms,
+                        queryCall: call
+                    );
 
-            ProduceQueryInterceptor(methodName, nms, file, call, ctx, sem, fileUsings, globalIndex++);
-        }
+                    optimizable.Queries.Add(queryModel);
+
     }
 
-    static IEnumerable<string> GetAllUsings(SyntaxNode node)
-    {
-        return node.DescendantNodes().OfType<UsingDirectiveSyntax>()
-            .Select(u => u.Name?.ToString())
-            .Where(s => s is not null)
-            .Select(s => s!);
-    }
-
-    static IEnumerable<string> NamespaceAndSubNamespaces(string nms)
+                return optimizable;
+            });
     {
         var parts = nms.Split('.');
         for (int i = 0; i < parts.Length; i++)

@@ -270,6 +270,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         var bodyBlock = body.DescendantNodesAndSelf().OfType<BlockSyntax>().First();
         if (closures.Count > 0)
         {
+            // Insert the closures at the beginning of the body and add a newline after each one
             var newBody = bodyBlock!.Statements
                 .InsertRange(0, closures.Select(p => p().WithEndOfLine()));
             body = bodyBlock!.WithStatements(newBody);

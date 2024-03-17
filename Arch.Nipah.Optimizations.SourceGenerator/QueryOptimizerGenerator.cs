@@ -137,17 +137,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         var loc = query.Expression.DescendantTokens().Last().GetLocation().GetLineSpan();
 
         var sb = new StringBuilder();
-        var usings = new HashSet<string>()
-        {
-            "Arch.Core",
-            "System",
-            "System.Collections.Generic",
-            "System.Linq",
-            "System.Text",
-            "System.Runtime.CompilerServices"
-        };
-        usings.UnionWith(NamespaceAndSubNamespaces(nms));
-        usings.UnionWith(fileUsings);
+        
         foreach (var u in usings)
             sb.AppendLine($"using {u};");
 

@@ -1,10 +1,12 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using Arch.Nipah.Optimizations.SourceGenerator.Models;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 
 namespace Arch.Nipah.Optimizations.SourceGenerator;
@@ -27,52 +29,80 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
             },
             (ctx, ct) =>
             {
-                return (node: (MethodDeclarationSyntax)ctx.TargetNode, file: GetInterceptorFilePath(ctx.TargetNode.SyntaxTree, ctx.SemanticModel.Compilation), ctx.SemanticModel);
+                var methodNode = (MethodDeclarationSyntax)ctx.TargetNode;
+                var file = GetInterceptorFilePath(methodNode.SyntaxTree, ctx.SemanticModel.Compilation);
+                var sem = ctx.SemanticModel;
+
+                var fileUsings = methodNode.SyntaxTree.GetRoot()
+                    .GetAllUsings().ToArray();
+
+                // Find namespace of the method
+                var namespaceNode = methodNode.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
+                var nms = namespaceNode is null ? "" : namespaceNode.Name.ToString();
+
+                // Obtain all the usings for the method
+                var usings = new HashSet<string>()
+                {
+                    "Arch.Core",
+                    "System",
+                    "System.Collections.Generic",
+                    "System.Linq",
+                    "System.Text",
+                    "System.Runtime.CompilerServices"
+                };
+                usings.UnionWith(CodeGenUtils.NamespaceAndSubNamespacesFrom(nms));
+                usings.UnionWith(fileUsings);
+
+                var header = new MethodHeader(
+                    methodName: methodNode.Identifier.Text,
+                    file,
+                    scope: methodNode.Body!,
+                    semantics: sem,
+                    usings
+                );
+                var optimizable = new OptimizableMethodModel(header);
+
+                // Find all method calls of world.Query
+                var queryCalls = methodNode.Body!.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                    .Where(i => i.Expression is MemberAccessExpressionSyntax m && m.Name.Identifier.Text == "Query");
+
+                int globalIndex = 0;
+                foreach (var call in queryCalls)
+                {
+                    if (call.ArgumentList.Arguments.Count < 2)
+                        continue;
+
+                    var queryModel = new QueryModel(
+                        method: header,
+                        globalIndex: globalIndex++,
+                        @namespace: nms,
+                        queryCall: call
+                    );
+
+                    optimizable.Queries.Add(queryModel);
+
+                }
+
+                return optimizable;
             });
 
-        context.RegisterSourceOutput(methods, (ctx, pair) =>
+        context.RegisterSourceOutput(methods, (ctx, optimizable) =>
         {
-            var (node, file, sem) = pair;
-            var fileUsings = GetAllUsings(node.SyntaxTree.GetRoot()).ToArray();
-            IterAndGen(node.Identifier.Text, file, node.Body!, ctx, sem, fileUsings);
+            foreach(var query in optimizable.Queries)
+                ProduceQueryInterceptor(query, ctx);
         });
     }
 
-    static void IterAndGen(string methodName, string file, BlockSyntax scope, SourceProductionContext ctx, SemanticModel sem, string[] fileUsings)
+    static void ProduceQueryInterceptor(QueryModel optimizableQuery, SourceProductionContext ctx)
     {
-        // Find all method calls of world.Query
-        var queryCalls = scope.DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Where(i => i.Expression is MemberAccessExpressionSyntax m && m.Name.Identifier.Text == "Query");
-        int globalIndex = 0;
-        foreach (var call in queryCalls)
-        {
-            if (call.ArgumentList.Arguments.Count < 2)
-                continue;
+        var query = optimizableQuery.QueryCall;
+        var sem = optimizableQuery.Method.Semantics;
+        var usings = optimizableQuery.Method.Usings;
+        var methodName = optimizableQuery.Method.MethodName;
+        var file = optimizableQuery.Method.File;
+        var nms = optimizableQuery.Namespace;
+        var globalIndex = optimizableQuery.GlobalIndex;
 
-            var namespaceNode = call.FirstAncestorOrSelf<BaseNamespaceDeclarationSyntax>();
-            var nms = namespaceNode is null ? "" : namespaceNode.Name.ToString();
-
-            ProduceQueryInterceptor(methodName, nms, file, call, ctx, sem, fileUsings, globalIndex++);
-        }
-    }
-
-    static IEnumerable<string> GetAllUsings(SyntaxNode node)
-    {
-        return node.DescendantNodes().OfType<UsingDirectiveSyntax>()
-            .Select(u => u.Name?.ToString())
-            .Where(s => s is not null)
-            .Select(s => s!);
-    }
-
-    static IEnumerable<string> NamespaceAndSubNamespaces(string nms)
-    {
-        var parts = nms.Split('.');
-        for (int i = 0; i < parts.Length; i++)
-            yield return string.Join(".", parts.Take(i + 1));
-    }
-
-    static void ProduceQueryInterceptor(string methodName, string nms, string file, InvocationExpressionSyntax query, SourceProductionContext ctx, SemanticModel sem, string[] fileUsings, int globalIndex)
-    {
         // Get the second argument type for the invocation expression syntax
         if (sem.GetSymbolInfo(query).Symbol is not IMethodSymbol queryInv)
             return;
@@ -96,7 +126,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
             ctx.Error(query, "Optimizable queries should be marked as 'static' or with '[NoOptimizable]' attribute.", 1);
             return;
         }
-        var queryParams = ExtractParams(lambda, sem);
+        var queryParams = ExtractECSParams(lambda, sem);
         var lambdaBody = lambda.Body;
         if (lambdaBody is null)
             return;
@@ -109,17 +139,7 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         var loc = query.Expression.DescendantTokens().Last().GetLocation().GetLineSpan();
 
         var sb = new StringBuilder();
-        var usings = new HashSet<string>()
-        {
-            "Arch.Core",
-            "System",
-            "System.Collections.Generic",
-            "System.Linq",
-            "System.Text",
-            "System.Runtime.CompilerServices"
-        };
-        usings.UnionWith(NamespaceAndSubNamespaces(nms));
-        usings.UnionWith(fileUsings);
+        
         foreach (var u in usings)
             sb.AppendLine($"using {u};");
 
@@ -127,29 +147,48 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
 
         sb.AppendLine($"public static class {nms.Replace('.', '_')}{methodName}_{globalIndex}_Interceptor");
         sb.AppendLine("{");
-        sb.AppendLine($"    [InterceptsLocation(@\"{file}\", {loc.StartLinePosition.Line + 1}, {loc.StartLinePosition.Character + 1})]");
-        sb.AppendLine("     [MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        sb.AppendLine($"    public static void Intercept(this World world, in QueryDescription description, {queryType.ToDisplayString()} _)");
-        sb.AppendLine("    {");
+
+        // Attribute to hint the compiler to intercept the method
+        // first argument is the file path
+        // second argument is the line number offset by 1
+        // third argument is the character offset by 1
+        sb.Indent().WithAttribute("InterceptsLocation")
+            .Argument($"@\"{file}\"")
+            .Argument(loc.StartLinePosition.Line + 1)
+            .Argument(loc.StartLinePosition.Character + 1)
+            .Into();
+
+        // Attribute to hint the JIT to inline the interceptor (if possible)
+        sb.Indent().WithAttribute("MethodImpl")
+            .Argument("MethodImplOptions.AggressiveInlining")
+            .Into();
+
+        // The interceptor method
+        sb.Indent().AppendLine($"public static void Intercept(this World world, in QueryDescription description, {queryType.ToDisplayString()} _)");
+        sb.Indent().AppendLine("{");
+
         // Write the closure body into the interceptor
-        sb.AppendLine(TransformBody(lambdaBody, queryParams, sem, ctx).ToFullString());
-        sb.AppendLine("    }");
+        var transformedBody = TransformBody(lambdaBody, queryParams, sem, ctx).ToFullString();
+        sb.AppendLine(transformedBody);
+
+        sb.Indent().AppendLine("}");
         sb.AppendLine("}");
 
-        ctx.AddSource($"{nms}.{methodName}Interceptor_{GetHashCode($"{file}_{query.GetLocation().GetLineSpan().StartLinePosition}_{globalIndex}")}", sb.ToString());
+        // Hash to differentiate the interceptor files
+        var hash = $"{file}_{query.GetLocation().GetLineSpan().StartLinePosition}_{globalIndex}".GetDeterministicHashCode();
+        ctx.AddSource($"{nms}.{methodName}Interceptor_{hash}", sb.ToString());
     }
-    static SyntaxNode TransformBody(CSharpSyntaxNode body, List<QueryParam> queryParams, SemanticModel sem, SourceProductionContext ctx)
+    static SyntaxNode TransformBody(CSharpSyntaxNode body, List<ECSQueryParam> queryParams, SemanticModel sem, SourceProductionContext ctx)
     {
         // Let's find all out of scope breaks
-        var throws = new HashSet<string>(body.DescendantNodes().OfType<ThrowStatementSyntax>()
-            .Where(t => t.Expression is not null)
-            .Select(t => t.Expression!)
+        var throws = new HashSet<string>(body.FindThrowStatementExpressions()
             .Where(t => sem.GetTypeInfo(t).Type?.ToString() is "Arch.Nipah.Optimizations.Optimizer.Break")
             .Select(t => t.ToFullString()));
 
         // Let's find all the method calls to Optimizer.OutOfScope
         var outOfScopeCalls = body.DescendantNodes().OfType<InvocationExpressionSyntax>()
-            .Where(i => i.Expression is MemberAccessExpressionSyntax m && m.Name.Identifier.Text == "OutOfScope");
+            .Where(i => i.Expression is MemberAccessExpressionSyntax m
+                && m.Name.Identifier.Text == "OutOfScope");
         // Now we'll pick all the closure bodies (or expression bodies) and store them in a list for later usage and remove from the original body
         var closures = new List<Func<StatementSyntax>>();
         foreach (var call in outOfScopeCalls)
@@ -167,56 +206,30 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
                 continue;
             }
 
-            if(closure.FirstAncestorOrSelf<VariableDeclaratorSyntax>() is not null and var dec)
-            {
-                var name = dec.Identifier.Text;
-                var varDec = SyntaxFactory.VariableDeclarator(
-                    SyntaxFactory.Identifier(name),
-                    null,
-                    SyntaxFactory.EqualsValueClause(closure.ExpressionBody)
-                );
-
-                var varStatement = SyntaxFactory.LocalDeclarationStatement(
-                    SyntaxFactory.VariableDeclaration(
-                        SyntaxFactory.IdentifierName("var "),
-                        SyntaxFactory.SingletonSeparatedList(varDec)
-                    )
-                );
-
-                closures.Add(() => varStatement);
-            }
-            else if(closure.FirstAncestorOrSelf<AssignmentExpressionSyntax>() is not null and var assign)
-            {
-                var left = assign.Left;
-                var assignStatement = SyntaxFactory.ExpressionStatement(
-                    SyntaxFactory.AssignmentExpression(
-                        SyntaxKind.SimpleAssignmentExpression,
-                        left,
-                        closure.ExpressionBody
-                    )
-                );
-
-                closures.Add(() => assignStatement);
-            }
-            else
-                closures.Add(() => SyntaxFactory.ExpressionStatement(closure.ExpressionBody));
+            var producer = OutOfScopeUtils.ProduceStatementFromOutOfScopeCall(
+                closure,
+                lambdaExpressionBody: closure.ExpressionBody
+            );
+            closures.Add(producer);
         }
         body = body.RemoveNodes(outOfScopeCalls
             .Select(c => c.FirstAncestorOrSelf<StatementSyntax>()!), SyntaxRemoveOptions.KeepNoTrivia)
             ?? throw new InvalidOperationException("Failed to remove nodes");
 
         // And we will replace all 'return's with 'continue's to make the code work
-        body = body.ReplaceNodes(body.DescendantNodes().OfType<ReturnStatementSyntax>(),
-                       (old, _) => SyntaxFactory.ContinueStatement()
-                       .WithTrailingTrivia(SyntaxFactory.SyntaxTrivia(SyntaxKind.EndOfLineTrivia, "\n")));
+        body = body.ReplaceNodes(
+            nodes: body.DescendantNodes().OfType<ReturnStatementSyntax>(),
+            computeReplacementNode: (_, _) => SyntaxFactory.ContinueStatement().WithEndOfLine()
+        );
 
         // And replace all occurrences of throw Arch.Nipah.Optimizations.Optimizer.OptimizerBreak with a real break statement
         var newThrows = body.DescendantNodes().OfType<ThrowStatementSyntax>()
             .Where(t => t.Expression is not null)
             .Where(t => throws.Contains(t.Expression!.ToString()));
-        body = body.ReplaceNodes(newThrows,
-                                  (old, _) => SyntaxFactory.BreakStatement()
-                                  .WithTrailingTrivia(SyntaxFactory.SyntaxTrivia(SyntaxKind.EndOfLineTrivia, "\n")));
+        body = body.ReplaceNodes(
+            nodes: newThrows,
+            computeReplacementNode: (_, _) => SyntaxFactory.BreakStatement().WithEndOfLine()
+        );
 
         // Now, let's pick all the resting body code and transform it this way:
         // foreach(var chunk in world.Query(description))
@@ -226,23 +239,12 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         //         rest of original body goes here
         //     }
         // }
-        // TODO: Get all the params and types and replace them accordingly to make this work
         var entityParam = queryParams.Find(queryParams => queryParams.IsEntity);
 
-        var variableDefinitions = queryParams.Count(qp => qp.IsEntity is false) switch
-        {
-            0 => "",
-            1 => ((Func<string>)(() =>
-            {
-                var first = queryParams.First(qp => qp.IsEntity is false);
-                return $"ref var {first.Name} = ref Unsafe.Add(ref arr, index);";
-            }))(),
-            _ => string.Join("\n", queryParams
-                .Where(qp => qp.IsEntity is false)
-                .Select((qp, i) => $"ref var {qp.Name} = ref Unsafe.Add(ref arr.t{i}, index);"))
-        };
+        string variableDefinitions = BuildVariableDefinitionsForQuery(queryParams);
 
-        var parsed = SyntaxFactory.ParseSyntaxTree($$"""
+        // Define the manual query iteration
+        var optimizedQueryLoop = SyntaxFactory.ParseSyntaxTree($$"""
             {
                 foreach(var chunk in world.Query(description).GetChunkIterator())
                 {
@@ -259,56 +261,68 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
                 }
             }
             """).GetRoot();
-        var replace = parsed.DescendantNodes().OfType<LocalDeclarationStatementSyntax>()
-            .Where(l => l.Declaration.Variables.Any(v => v.Identifier.Text is "replace")).First();
-        parsed = parsed.ReplaceNode(replace, body);
-        body = parsed as CSharpSyntaxNode ?? throw new InvalidOperationException("Failed to replace node");
+
+        // Replace the body with the new parsed body
+        var replace = optimizedQueryLoop.DescendantNodes()
+            .OfType<LocalDeclarationStatementSyntax>()
+            .Where(l => l.Declaration.Variables.Any(v => v.Identifier.Text is "replace"))
+            .First();
+        optimizedQueryLoop = optimizedQueryLoop.ReplaceNode(replace, body);
+        body = optimizedQueryLoop as CSharpSyntaxNode ?? throw new InvalidOperationException("Failed to replace node");
 
         // Now we'll add the closures back to the body
         var bodyBlock = body.DescendantNodesAndSelf().OfType<BlockSyntax>().First();
         if (closures.Count > 0)
         {
+            // Insert the closures at the beginning of the body and add a newline after each one
             var newBody = bodyBlock!.Statements
-                .InsertRange(0, closures.Select(p => p().WithTrailingTrivia(SyntaxFactory.SyntaxTrivia(SyntaxKind.EndOfLineTrivia, "\n"))));
+                .InsertRange(0, closures.Select(p => p().WithEndOfLine()));
             body = bodyBlock!.WithStatements(newBody);
         }
 
         return body;
     }
 
-    static List<QueryParam> ExtractParams(LambdaExpressionSyntax closure, SemanticModel sem)
+    static string BuildVariableDefinitionsForQuery(List<ECSQueryParam> queryParams)
     {
-        var args = new List<QueryParam>(8);
+        var nonEntityParams = queryParams.Where(qp => qp.IsEntity is false);
 
-        var symbol = sem.GetSymbolInfo(closure).Symbol as IMethodSymbol;
-        if (symbol is null)
-            return args;
-
-        foreach (var p in symbol.Parameters)
-            args.Add(new QueryParam(p.Type.ToDisplayString(), p.Name));
-
-        return args;
+        string variableDefinitions;
+        switch (nonEntityParams.Count())
+        {
+            case 0:
+            {
+                variableDefinitions = "";
+                break;
+            }
+            case 1:
+            {
+                var first = nonEntityParams.First();
+                variableDefinitions = $"ref var {first.Name} = ref Unsafe.Add(ref arr, index);";
+                break;
+            }
+            default:
+            {
+                variableDefinitions = string.Join("\n", nonEntityParams
+                    .Select((qp, i) => $"ref var {qp.Name} = ref Unsafe.Add(ref arr.t{i}, index);"));
+                break;
+            }
+        };
+        return variableDefinitions;
     }
 
-    static int GetHashCode(string str)
-    {
-        int hash = 0;
-        for (int i = 0; i < str.Length; i++)
-            hash = (hash << 5) - hash + str[i];
-        return hash;
-    }
+    static List<ECSQueryParam> ExtractECSParams(LambdaExpressionSyntax closure, SemanticModel sem)
+        => closure.ExtractParams(sem).Select(p => new ECSQueryParam(p)).ToList();
 }
-readonly struct QueryParam
+readonly struct ECSQueryParam
 {
-    public readonly string Type;
-    public readonly string Name;
+    readonly LambdaExpressionParam param;
+    public readonly string Type => param.Type;
+    public readonly string Name => param.Name;
     public readonly bool IsEntity => Type is "Arch.Core.Entity";
 
     public readonly bool IsValid => Type is not null && Name is not null;
 
-    public QueryParam(string type, string name)
-    {
-        Type = type;
-        Name = name;
-    }
+    public ECSQueryParam(LambdaExpressionParam param)
+        => this.param = param;
 }

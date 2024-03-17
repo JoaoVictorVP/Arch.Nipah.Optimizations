@@ -83,10 +83,12 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
 
                 return optimizable;
             });
+
+        context.RegisterSourceOutput(methods, (ctx, optimizable) =>
     {
-        var parts = nms.Split('.');
-        for (int i = 0; i < parts.Length; i++)
-            yield return string.Join(".", parts.Take(i + 1));
+            foreach(var query in optimizable.Queries)
+                ProduceQueryInterceptor(query, ctx);
+        });
     }
 
     static void ProduceQueryInterceptor(string methodName, string nms, string file, InvocationExpressionSyntax query, SourceProductionContext ctx, SemanticModel sem, string[] fileUsings, int globalIndex)

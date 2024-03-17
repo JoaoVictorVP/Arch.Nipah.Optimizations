@@ -170,7 +170,9 @@ public class QueryOptimizerGenerator : IIncrementalGenerator
         sb.Indent().AppendLine("}");
         sb.AppendLine("}");
 
-        ctx.AddSource($"{nms}.{methodName}Interceptor_{GetHashCode($"{file}_{query.GetLocation().GetLineSpan().StartLinePosition}_{globalIndex}")}", sb.ToString());
+        // Hash to differentiate the interceptor files
+        var hash = $"{file}_{query.GetLocation().GetLineSpan().StartLinePosition}_{globalIndex}".GetDeterministicHashCode();
+        ctx.AddSource($"{nms}.{methodName}Interceptor_{hash}", sb.ToString());
     }
     static SyntaxNode TransformBody(CSharpSyntaxNode body, List<QueryParam> queryParams, SemanticModel sem, SourceProductionContext ctx)
     {
